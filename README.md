@@ -8,7 +8,8 @@
 ## 已配置
 
 - 网页端调用 `https://api.meican.dou.asia`（Cloudflare Worker + D1）。
-- 网页端不内置 AI 密钥；登录云同步后，由 Worker 代理图片识别，浏览器跨域由 Worker 处理。
+- 网页端不内置 AI 密钥，拍照识别不需要登录；由 Worker 代理并做匿名限流，浏览器跨域也由 Worker 处理。
+- 云同步是可选的，只负责备份与合并，不影响拍照、记录和趋势等本地功能。
 - `vercel.json` 关闭了入口文件与 Service Worker 的长缓存，发布后能及时拿到新版本。
 
 ## 在 Vercel 部署
@@ -33,8 +34,11 @@ Vercel 的 `meican` 记录互不影响。
 
 ```bash
 flutter build web --release \
+  --no-web-resources-cdn \
   --dart-define=MEICAN_API_BASE=https://api.meican.dou.asia
 ```
+
+`--no-web-resources-cdn` 让网页从本仓库的 `canvaskit/` 加载引擎文件；中文字体已经裁剪并打包在 `assets/fonts`。这两项是首屏速度的关键，构建时不要省略。
 
 把 `build/web` 的内容覆盖到本仓库根目录，提交并推送。Vercel 会自动重新部署。
 
