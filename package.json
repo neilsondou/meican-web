@@ -1,0 +1,9 @@
+{
+  "name": "meican-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "每餐网页版静态站点与 Vercel Serverless API",
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

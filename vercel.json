@@ -6,6 +6,18 @@
     "api/ai.js": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/login.js": {
+      "maxDuration": 15,
+      "memory": 512
+    },
+    "api/logout.js": {
+      "maxDuration": 10,
+      "memory": 512
+    },
+    "api/sync.js": {
+      "maxDuration": 30,
+      "memory": 512
     }
   },
   "headers": [
@@ -15,6 +27,15 @@
         {
           "key": "Cache-Control",
           "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/main.dart.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
         }
       ]
     },
@@ -33,6 +54,24 @@
         {
           "key": "Cache-Control",
           "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/assets/fonts/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/canvaskit/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
         }
       ]
     }

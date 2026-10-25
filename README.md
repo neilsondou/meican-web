@@ -1,56 +1,153 @@
 # 每餐 Web
 
-「每餐」的 Flutter Web 构建产物，部署在 Vercel，访问地址：<https://meican.dou.asia/>。
-
-这个仓库放编译后的静态文件，以及 `api/ai.js` 同源 AI 代理。源码在
+「每餐」的 Flutter Web 构建产物与 Vercel Serverless API，线上地址：
+<https://meican.dou.asia/>。源码在
 [neilsondou/meican](https://github.com/neilsondou/meican)。
 
-## 已配置
+这个仓库承担三件事：
 
-- 网页端 AI（拍照识别、体重截图识别、趋势页 AI 建议）走同源的 `/api/ai`，
-  由 Vercel Serverless 转发到智谱，不需要登录，也不需要 Cloudflare Worker。
-- AI 测试密钥写在 `lib/ai-keys.js`，会随公开仓库一起发布；任何人都能读取和滥用这组
+- 托管 Flutter Web 静态文件；
+- `api/ai.js`：同源 AI 代理（拍照识别、体重截图识别、趋势页 AI 建议）；
+- `api/login.js` / `api/logout.js` / `api/sync.js`：可选的云同步服务，数据存在
+  Vercel Marketplace 的 Neon Postgres 中，不再使用 Cloudflare Worker 或 D1。
+
+## 当前配置
+
+- 网页端 AI 走同源 `/api/ai`，由 Vercel Serverless 转发到智谱，不需要登录。
+- AI 测试密钥写在 `lib/ai-keys.js`，会随公开仓库发布；任何人都能读取和滥用这组
   免费密钥。仓库公开期间请把它当作测试用途，发现额度异常时及时更换。
-- 云同步仍然调用 `https://api.meican.dou.asia`（Cloudflare Worker + D1），是可选的，
-  只负责备份与合并，不影响拍照、记录、AI 建议和趋势等本地功能。
-- 网页数据保存在浏览器本地存储中；首次进入会提示不要清理浏览器缓存。
-- `vercel.json` 关闭了入口文件与 Service Worker 的长缓存，发布后能及时拿到新版本。
+- 云同步完全可选，不登录也能使用拍照、记录、AI 建议和趋势等全部本地功能。
+- 网页数据保存在浏览器本地存储中；首次进入会提示不要清理浏览器缓存，并展示
+  iOS / Android 安装入口。
+- 自定义字体不再写进 `FontManifest`（那会让 Flutter Web 在首帧前阻塞下载约
+  2.4 MB 字体）。启动时由 `FontLoader` 从国内可访问的 jsDelivr 镜像加载
+  WOFF2，失败再回退到本仓库 `assets/fonts/` 下的打包文件。
+- `vercel.json` 关闭入口文件的长缓存，并给字体与 CanvasKit 增加一天缓存。
 
-## 在 Vercel 部署
+## 云同步部署（Vercel + Neon）
 
-1. 打开 Vercel → **Add New → Project**，导入 `neilsondou/meican-web`。
-2. Framework Preset 选 **Other**；Build Command 留空，Output Directory 保持默认（仓库根目录）。
-3. 点击 **Deploy**。首次部署后应能通过 Vercel 提供的地址打开。
-4. 进入项目 **Settings → Domains**，添加 `meican.dou.asia`。
-5. 按 Vercel 页面给出的 DNS 记录配置：
-   - 在 Cloudflare 的 `dou.asia` 区域添加 `CNAME`：名称 `meican`，目标 `cname.vercel-dns.com`。
-   - 初始验证阶段把代理状态设为 **DNS only**（灰色云朵），避免和 Vercel 的证书签发冲突。
-   - 如果 Vercel 给出了新的记录值，以 Vercel 页面为准。
-6. 等待 Vercel 显示域名 Valid，打开 <https://meican.dou.asia/>。
+### 1. 创建数据库
 
-`api.meican.dou.asia` 是 Cloudflare Worker 的自定义域名，在 Worker 的
-**Settings → Domains & Routes** 中绑定，Cloudflare 会自动创建对应的 DNS 记录；它和上面
-Vercel 的 `meican` 记录互不影响。
+1. 打开 Vercel 项目的 **Storage / Marketplace**，选择 **Neon**（Postgres），
+   创建一个免费数据库并连接到本项目。
+2. Vercel 会自动注入 `POSTGRES_URL`、`POSTGRES_PRISMA_URL`、
+   `POSTGRES_URL_NON_POOLING` 等环境变量。函数按以下顺序读取：
+   `DATABASE_URL` → `POSTGRES_URL` → `POSTGRES_PRISMA_URL`。
+3. 如果使用外部 Postgres，在 **Settings → Environment Variables** 手动添加
+   `DATABASE_URL`。请使用带 `-pooler` 的池化连接串，并保留 `sslmode=require`。
+4. 表结构会在第一次 API 请求时自动创建；也可以在 Neon SQL Editor 里执行
+   [`db/schema.sql`](db/schema.sql)。
+
+### 2. 初始化账号
+
+在 Vercel **Settings → Environment Variables** 添加：
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `MEICAN_USERS` | 是 | JSON 对象，键是账号、值是密码，例如 `{"dty":"换成强密码","tzx":"换成强密码"}`。密码至少 6 位，建议 12 位以上。勾选 Sensitive。 |
+| `MEICAN_USERS_RESET` | 否 | 临时设为 `1` 并重新部署，会把已有账号密码重置为 `MEICAN_USERS` 里的值。完成后删除该变量。 |
+| `MEICAN_ALLOWED_ORIGINS` | 否 | 逗号分隔的额外允许来源。默认已包含 `meican.dou.asia`、`www.dou.asia`、本地 8899 端口和 `*.vercel.app`。 |
+
+账号只在数据库为空时写入；之后修改环境变量不会自动覆盖已有密码。
+环境变量只存在 Vercel，不会进入仓库或网页包。不要把真实密码写进代码、README 或
+`db/schema.sql`。
+
+### 3. 重新部署并验证
+
+添加环境变量后重新部署。依次验证：
+
+```bash
+# 未登录访问：返回 401 说明函数、数据库和鉴权都正常
+curl -i https://meican.dou.asia/api/sync
+
+# 用占位账号登录：成功时返回 {"token":"...","username":"..."}
+curl -i -X POST https://meican.dou.asia/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"dty","password":"你的密码"}'
+
+# 用上一步的 token 读取云端快照
+curl -i https://meican.dou.asia/api/sync \
+  -H 'Authorization: Bearer 上一步返回的 token'
+```
+
+如果返回 503「云同步尚未配置数据库」，说明没有读到连接串；如果返回 500，
+到 Vercel → Functions 日志查看具体错误。日志不会打印密码、Token 或连接串。
+
+## API 约定
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/login` | `{username,password}` → `{token,username}`；401 密码错误，429 尝试过多。 |
+| `POST` | `/api/logout` | Bearer Token，删除当前会话。 |
+| `GET` | `/api/sync` | Bearer Token → `{revision,data}`；没有数据时 `revision=0,data=null`。 |
+| `PUT` | `/api/sync` | `{baseRevision,data}` → `{revision}`；版本冲突返回 409。 |
+
+服务端规则：
+
+- 密码用 Node `scrypt` 加随机盐哈希，Token 只保存 SHA-256 摘要，有效期 90 天；
+- 快照存在 `snapshots.data`（JSONB），用 `revision` 做乐观并发控制；
+- 登录失败按 IP 限流：15 分钟内最多 10 次；
+- 单个快照限制约 3.8 MB，超过返回 413；
+- CORS 只允许白名单来源；原生 App 不带 `Origin`，不受影响。
+
+## 本地预览
+
+```bash
+node tool/dev-server.js
+```
+
+打开 `http://127.0.0.1:8899/`。这个脚本同时提供静态文件和 `/api/ai` 同源转发，
+和线上 Vercel 的结构一致，所以本地也能测试拍照识别和 AI 建议。直接用
+`python -m http.server` 之类的纯静态服务器会没有 `/api/ai`，AI 会返回 404。
+
+浏览器不能直接调用 `open.bigmodel.cn`：ChatGLM 的 CORS 预检响应不带
+`Access-Control-Allow-Origin`，`fetch` 会直接失败。因此网页端必须保留这个同源
+转发，它只把请求原样转给 ChatGLM，不登录、不存图片。
 
 ## 更新网页
 
-在源码仓库重新构建（不要传 `MEICAN_AI_KEYS`）：
+在源码仓库构建（网页版使用 `lib/ai-keys.js` 的服务端密钥池）：
 
 ```bash
-flutter build web --release \
-  --no-web-resources-cdn \
-  --dart-define=MEICAN_API_BASE=https://api.meican.dou.asia
+flutter build web --release --no-web-resources-cdn
 ```
 
-`--no-web-resources-cdn` 让网页从本仓库的 `canvaskit/` 加载引擎文件；中文字体已经裁剪并打包在 `assets/fonts`。这两项是首屏速度的关键，构建时不要省略。
+网页端云同步走同源 `/api/...`，不需要再传 `MEICAN_API_BASE`。原生 App 默认使用
+`https://meican.dou.asia`，需要指向别的域名时再加
+`--dart-define=MEICAN_API_BASE=https://你的域名`。
 
-把 `build/web` 的内容覆盖到本仓库根目录，保留 `api/`、`lib/`、`vercel.json` 和
-`README.md`，提交并推送。Vercel 会自动重新部署，并把 `api/ai.js` 注册为
-`/api/ai` 函数。部署后可以请求 `GET /api/ai`，返回 405 JSON 就说明函数已经生效。
+`--no-web-resources-cdn` 让网页从本仓库的 `canvaskit/` 加载引擎文件。字体由
+`lib/app_fonts_web.dart` 在运行时从以下镜像依次尝试，约 1.1 MB WOFF2：
 
-也可以在 Vercel 环境变量里新增 `MEICAN_AI_KEYS`（多个密钥用逗号分隔）临时追加密钥，
-它会和 `lib/ai-keys.js` 中的内置测试密钥一起轮换。
+1. `https://jsd.onmicrosoft.cn/gh/neilsondou/meican@main/assets/fonts/`
+2. `https://cdn.jsdmirror.com/gh/neilsondou/meican@main/assets/fonts/`
+3. `https://fastly.jsdelivr.net/gh/neilsondou/meican@main/assets/fonts/`
+4. 本仓库 `assets/fonts/`（`rootBundle` 回退）
 
-如果 Worker 没有绑定自定义域名，改用 `wrangler deploy` 输出的
-`https://meican-api.<子域>.workers.dev` 重新构建；同时确认 Worker 的允许来源包含
-`https://meican.dou.asia`。
+更新字体后需要同时推送源码仓库，等 jsDelivr 同步完成；网页端最多缓存一天。
+
+把 `build/web` 的内容覆盖到本仓库根目录，保留以下文件/目录：
+
+`api/`、`lib/`、`db/`、`package.json`、`vercel.json`、`README.md`、`.gitignore`、
+`.nojekyll`。
+
+提交并推送后 Vercel 自动重新部署。`package.json` 里的 `pg` 依赖会由 Vercel
+在构建函数时安装。
+
+## 手机安装包
+
+网页首次进入的提示里有「下载 iOS 版 / 下载 Android 版」：
+
+- iOS：<https://www.dou.asia/meican.ipa>（需要自签后安装；也可以直接在 Safari
+  里「分享 → 添加到主屏幕」使用网页版）
+- Android：<https://www.dou.asia/meican.apk>
+
+两个文件放在 `neilsondou/blog2` 仓库根目录，由 `www.dou.asia` 提供，不在本仓库
+构建。链接常量在源码 `lib/app_config.dart`。
+
+## 域名与 DNS
+
+如果 `dou.asia` 的 DNS 托管在 Cloudflare，只需添加 Vercel 给出的 CNAME
+（例如 `meican` → `cname.vercel-dns.com`，初始设为 DNS only）。这里只用它做
+DNS 解析，不使用任何 Cloudflare 计算、存储或 Worker 服务。以 Vercel 控制台
+显示的记录为准。
