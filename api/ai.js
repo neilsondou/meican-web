@@ -1,8 +1,8 @@
 const { AI_KEYS } = require('../lib/ai-keys');
 
 const AI_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-const VISION_MODEL = 'glm-4v-flash';
-const TEXT_MODEL = 'glm-4-flash';
+// GLM-4V-Flash 同时支持图片和纯文本，所有请求统一走这个免费模型。
+const MODEL = 'glm-4v-flash';
 // Vercel 普通函数请求体上限约 4.5 MB，给 base64 图片留一点余量。
 const MAX_BODY_BYTES = 4_200_000;
 // 最近 30 天的饮食与体重 JSON 可能超过两万字符。
@@ -54,7 +54,7 @@ module.exports = async function handler(req, res) {
     }
 
     const payload = {
-      model: parsed.hasImage ? VISION_MODEL : TEXT_MODEL,
+      model: MODEL,
       messages: body.messages,
     };
     if (!parsed.hasImage) {
