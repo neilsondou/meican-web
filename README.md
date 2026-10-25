@@ -116,15 +116,31 @@ flutter build web --release --no-web-resources-cdn
 `https://meican.dou.asia`，需要指向别的域名时再加
 `--dart-define=MEICAN_API_BASE=https://你的域名`。
 
-`--no-web-resources-cdn` 让网页从本仓库的 `canvaskit/` 加载引擎文件。字体由
-`lib/app_fonts_web.dart` 在运行时从以下镜像依次尝试，约 1.1 MB WOFF2：
+`--no-web-resources-cdn` 让网页不再去 `gstatic` 下载引擎文件。线上的首屏资源
+由 `web/flutter_bootstrap.js` 指向 jsDelivr 国内镜像，而不是 Vercel（国内直连
+Vercel 只有 30 KB/s 左右，首屏要等一分多钟）：
 
-1. `https://jsd.onmicrosoft.cn/gh/neilsondou/meican@main/assets/fonts/`
-2. `https://cdn.jsdmirror.com/gh/neilsondou/meican@main/assets/fonts/`
+- `main.dart.js`、`canvaskit/`：`https://cdn.jsdmirror.com/gh/neilsondou/meican-web@<提交>/`
+- `localhost` / `127.0.0.1` 预览时改用本目录资源，方便测试新构建。
+
+URL 固定到具体提交而不是 `main`，否则 jsDelivr 的分支缓存会让新旧构建的
+`main.dart.js` 和 `canvaskit` 混用，页面可能白屏。发布新构建后：
+
+1. 把 `build/web` 提交并推送，记下这次提交的哈希（包含 `main.dart.js` 和
+   `canvaskit/`）；
+2. 把 `web/flutter_bootstrap.js` 里的 `meican-web@...` 改成这个哈希，重新构建；
+3. 再提交推送一次，Vercel 部署后 `flutter_bootstrap.js`（约 1 KB）从同域加载，
+   其余大文件都走镜像。
+
+字体由 `lib/app_fonts_web.dart` 在运行时从以下镜像依次尝试，约 1.1 MB WOFF2：
+
+1. `https://cdn.jsdmirror.com/gh/neilsondou/meican@<提交>/assets/fonts/`
+2. `https://jsd.onmicrosoft.cn/gh/neilsondou/meican@main/assets/fonts/`
 3. `https://fastly.jsdelivr.net/gh/neilsondou/meican@main/assets/fonts/`
 4. 本仓库 `assets/fonts/`（`rootBundle` 回退）
 
-更新字体后需要同时推送源码仓库，等 jsDelivr 同步完成；网页端最多缓存一天。
+`web/index.html` 里的字体 preload 也固定到同一个源码提交。更新字体后需要同时
+推送源码仓库，把这两处的哈希换成新提交，再按上面的步骤发布网页。
 
 把 `build/web` 的内容覆盖到本仓库根目录，保留以下文件/目录：
 
