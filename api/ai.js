@@ -56,9 +56,10 @@ module.exports = async function handler(req, res) {
     const payload = {
       model: MODEL,
       messages: body.messages,
+      // 图片识别也需要低温，减少同一张照片多次识别的热量波动。
+      temperature: clampNumber(body.temperature, 0, 1, parsed.hasImage ? 0.2 : 0.4),
     };
     if (!parsed.hasImage) {
-      payload.temperature = clampNumber(body.temperature, 0, 1, 0.4);
       payload.max_tokens = 600;
     }
 
